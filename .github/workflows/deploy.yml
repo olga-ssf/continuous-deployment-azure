@@ -16,6 +16,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
@@ -25,12 +27,15 @@ jobs:
           java-version: '21'
       - name: Run tests
         run: mvn test      
+      - name: Extract project version
+        id: get_version
+        run: echo "version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
       - name: Generate Docker image
-        run: mvn spring-boot:build-image -DskipTests -Dspring-boot.build-image.imageName=${{ secrets.DOCKERHUB_USERNAME }}/posts:latest
+        run: mvn spring-boot:build-image -DskipTests -Dspring-boot.build-image.imageName=${{ secrets.DOCKERHUB_USERNAME }}/posts:${{ steps.get_version.outputs.version }}
       - name: Login to DockerHub
         run: docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}" 
       - name: Push image to DockerHub
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/posts:latest
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/posts:${{ steps.get_version.outputs.version }}
         
   deploy:
     runs-on: ubuntu-latest
@@ -47,7 +52,7 @@ jobs:
           az container create \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name posts \
-            --image ${{ secrets.DOCKERHUB_USERNAME }}/posts:latest \
+            --image ${{ secrets.DOCKERHUB_USERNAME }}/posts:${{ needs.build.outputs.version }} \
             --registry-login-server index.docker.io \
             --registry-username ${{ secrets.DOCKERHUB_USERNAME }} \
             --registry-password ${{ secrets.DOCKERHUB_READ_TOKEN }} \
